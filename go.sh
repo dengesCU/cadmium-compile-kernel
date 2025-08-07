@@ -124,8 +124,9 @@ echo "Finished packaging for depthcharge"
 echo "Building kernel modules.."
 
 sudo make -C $CADMIUMROOT/tmp/linux-arm64/ INSTALL_MOD_PATH="/out" modules_install
-
-tar -cf /out/linux-$VERSION-cadmium-modules.xz /out/lib
+cd out
+tar -cf linux-$VERSION-cadmium-modules.xz lib
+cd ..
 rm /out/lib -r
 
 echo "Done"
