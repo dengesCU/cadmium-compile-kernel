@@ -69,5 +69,66 @@ time make -j"$THREADS" LLVM=1 ARCH=$ARCH
 
 echo "Packaging kernel for depthcharge machines"
 
+[ -z "$CADMIUMROOT" ] && exit 1
+
+VBUTIL_KERNEL=""
+if which vbutil_kernel >/dev/null 2>&1; then
+	VBUTIL_KERNEL="vbutil_kernel"
+elif which futility >/dev/null 2>&1; then
+	VBUTIL_KERNEL="futility vbutil_kernel"
+else
+	echo "vbutil_kernel not found"
+	exit 1
+fi
+
+
+cd "$CADMIUMROOT/tmp/linux-$ARCH"
+
+if [ "$ARCH" = "arm64" ]; then
+	COMPRESSION="lz4"
+	IMAGE="c_linux.lz4"
+	lz4 -z --best -f "arch/$ARCH/boot/Image" c_linux.lz4
+else
+	COMPRESSION="none"
+	IMAGE="arch/arm/boot/zImage"
+fi
+
+echo 'console=ttyMSM0,115200 console=ttyS2,115200 console=ttyS0,115200 console=tty1 rootwait rw fbcon=logo-pos:center,logo-count:1 loglevel=7 root=PARTUUID=%U/PARTNROFF=2' >> cmdline
+echo 'console=ttyMSM0,115200 console=ttyS2,115200 console=ttyS0,115200 console=tty1 rootwait rw fbcon=logo-pos:center,logo-count:1 loglevel=7 root=PARTUUID=%U/PARTNROFF=1' >> cmdline.p2
+
+# https://github.com/archlinuxarm/PKGBUILDs/blob/master/core/linux-aarch64/PKGBUILD
+for B in veyron elm gru kukui trogdor; do
+	DTBS="$DTBS $(find arch/$ARCH/boot/dts -name \*${B}\*.dtb)"
+done
+
+echo $DTBS | "$CADMIUMROOT/loader/depthcharge/generate_chromebook_its.sh" "$IMAGE" "$ARCH" "$COMPRESSION" > kernel.its
+
+mkimage -D "-I dts -O dtb -p 2048" -f kernel.its vmlinux.uimg
+
+dd if=/dev/zero of=bootloader.bin bs=512 count=1
+$VBUTIL_KERNEL --pack vmlinux.kpart \
+	--version 1 \
+	--vmlinuz vmlinux.uimg \
+	--arch arm \
+	--keyblock /usr/share/vboot/devkeys/kernel.keyblock \
+	--signprivate /usr/share/vboot/devkeys/kernel_data_key.vbprivk \
+	--config cmdline \
+	--bootloader bootloader.bin
+
+cp vmlinux.kpart "$CADMIUMROOT/tmp/"
+cp vmlinux.kpart /out/vmlinux-$VERSION-cadmium.kpart
+#dd if="vmlinux.kpart" of="$KERNPART" conv=fsync
+
+echo "Finished packaging for depthcharge"
+
+echo "Building kernel modules.."
+
+sudo make -C $CADMIUMROOT/tmp/linux-arm64/ INSTALL_MOD_PATH="/out" modules_install
+
+tar -cf /out/linux-$VERSION-cadmium-modules.xz /out/lib
+rm /out/lib -r
+
+echo "Done"
+
 echo $VERSION > $CADMIUMROOT/latest_stable.txt
 
