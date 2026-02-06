@@ -56,6 +56,11 @@ for x in $(ls $PATCHES_DIR/*.common_patch); do
 	patch -p1 --forward < $x
 done
 
+for x in $(ls $PATCHES_DIR/*.reverse_patch); do
+        echo "Reverting $x"
+        patch -p1 --reverse < $x
+done
+
 cp $KERNEL_CONF .config
 cp $KERNEL_CONF ${KERNEL_CONF}~
 
